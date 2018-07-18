@@ -2,6 +2,7 @@
 // Licensed under the MIT License.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 #if NETFX // System.Data.Linq.Binary is only supported in the AspNet version.
 using System.Data.Linq;
@@ -31,7 +32,9 @@ namespace Microsoft.AspNet.OData.Formatter
     {
         private static readonly EdmCoreModel _coreModel = EdmCoreModel.Instance;
 
-        private static readonly Dictionary<Type, IEdmPrimitiveType> _builtInTypesMapping =
+	    private static readonly ConcurrentDictionary<Tuple<IEdmModel, Type>, IEdmTypeReference> _clrTypeReferenceCache = new ConcurrentDictionary<Tuple<IEdmModel, Type>, IEdmTypeReference>();
+
+		private static readonly Dictionary<Type, IEdmPrimitiveType> _builtInTypesMapping =
             new[]
             {
                 new KeyValuePair<Type, IEdmPrimitiveType>(typeof(string), GetPrimitiveType(EdmPrimitiveTypeKind.String)),
@@ -180,15 +183,18 @@ namespace Microsoft.AspNet.OData.Formatter
 
         public static IEdmTypeReference GetEdmTypeReference(this IEdmModel edmModel, Type clrType)
         {
-            IEdmType edmType = edmModel.GetEdmType(clrType);
-            if (edmType != null)
-            {
-                bool isNullable = IsNullable(clrType);
-                return ToEdmTypeReference(edmType, isNullable);
-            }
-
-            return null;
-        }
+			var key = Tuple.Create(edmModel, clrType);
+	        return _clrTypeReferenceCache.GetOrAdd(key, k =>
+		        {
+			        IEdmType edmType = edmModel.GetEdmType(clrType);
+			        if (edmType != null) 
+			        {
+				        bool isNullable = IsNullable(clrType);
+				        return ToEdmTypeReference(edmType, isNullable);
+			        }
+			        return null;
+		        });
+		}
 
         public static IEdmTypeReference ToEdmTypeReference(this IEdmType edmType, bool isNullable)
         {
